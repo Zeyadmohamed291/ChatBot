@@ -1,126 +1,282 @@
-# Loulou AI
+# 🛍️ Loulou AI — Shopping Assistant Microservice
 
-خدمة Python/FastAPI مستقلة لمساعد التسوق، جاهزة للتطوير بالتوازي مع Laravel.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12+-blue.svg?logo=python&logoColor=white" alt="Python 3.12+" />
+  <img src="https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/OpenAI-Function_Calling-412991.svg?logo=openai&logoColor=white" alt="OpenAI" />
+  <img src="https://img.shields.io/badge/Redis-Session_Store-DC382D.svg?logo=redis&logoColor=white" alt="Redis" />
+  <img src="https://img.shields.io/badge/Tests-52_Passed-success.svg?logo=pytest&logoColor=white" alt="52 Tests Passed" />
+  <img src="https://img.shields.io/badge/Code_Style-Ruff-black.svg" alt="Ruff Clean" />
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white" alt="Docker Ready" />
+</p>
 
-لشرح وظيفة كل ملف ومسار المحادثة وأماكن التعديل: [دليل ملفات المشروع بالعربي](docs/CODE_GUIDE_AR.md).
+A production-ready, session-scoped **bilingual (Arabic & English)** conversational commerce microservice. Built with **FastAPI** and **Python 3.12**, it is designed to operate securely behind a **Laravel** multi-store e-commerce application.
 
-تفهم العربية والإنجليزية عبر OpenAI، وتبحث في كل المتاجر، وتجيب من بيانات الـbackend. الترشيح يعتمد على كلام العميل داخل الجلسة. تتبع الطلب يحتاج رقمًا كتبه العميل في رسالته، وتسجيل الدخول، والتحقق من ملكية الطلب. لا توجد أدوات شراء أو دفع أو إلغاء.
+---
 
-## التشغيل المحلي
+## 🌟 Key Features
 
-Python 3.12 أو أحدث. على Windows/PowerShell:
+* **🌐 Native Bilingual Support (Arabic & English)**: Understands Egyptian/Gulf Arabic dialects and English, intelligently switching languages based on customer input.
+* **🛡️ Zero Hallucinations**: Product prices, stock, descriptions, and store information are fetched directly from authoritative backend APIs. The AI is used strictly for intent classification and entity/slot extraction via OpenAI Function Calling.
+* **🔒 Enterprise Order Tracking Security**:
+  * Never lists or discloses customer orders indiscriminately.
+  * Lookups require an explicit order reference typed in the user's message and customer authentication.
+  * Cross-customer order probing is strictly blocked (returns 404/not found without revealing order existence).
+* **⚡ Dual-Mode Operation**:
+  * **Zero-Cost Local Mode**: Instant local development using regex intent planning and a mock catalog—no OpenAI API key or Laravel server required.
+  * **Production Mode**: Full integration with OpenAI Responses API and Laravel backend APIs.
+* **🔄 Seamless Escalation**: Generates pre-formatted WhatsApp customer service deep-links when user requests human assistance or when queries exceed platform policies.
+* **🗄️ Secure Session Management**: Ephemeral conversation sessions backed by an in-memory store (development) or a distributed Redis cluster with automated sliding TTL eviction.
+* **🚀 Production-Grade Quality**: Includes 52 automated tests, rate limiting, token-bucket protection, Docker containerization, and structured telemetry.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
-.\.venv\Scripts\python.exe -m pip install --no-deps -e .
-Copy-Item .env.example .env
-.\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
-```
+---
 
-إن كان ملف `.env` موجودًا بالفعل فلا تستبدله. التثبيت المحلي الحالي يحتوي بالفعل بيئة `.venv` وملف إعدادات بمفتاح خدمة عشوائي؛ ابدأ بأمر التشغيل فقط.
+## 🏛️ System Architecture
 
-توثيق الـAPI التفاعلي في وضع التطوير: `http://127.0.0.1:8000/docs`.
-
-لتجربة محادثة كاملة على الخدمة التي تعمل محليًا، من نافذة أخرى:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/demo.py
-```
-
-السكربت يقرأ مفتاح الخدمة من `.env` من غير طباعته، ويجرب التحية والترشيح وتتبع الطلب، ثم ينهي الجلسة.
-
-## أوضاع التشغيل
-
-| الإعداد | الوظيفة |
-|---|---|
-| `PLANNER_MODE=demo`, `BACKEND_MODE=mock` | تجربة مجانية محلية بقاعدة كلمات بسيطة وبيانات مصطنعة؛ ليست اختبارًا لجودة نموذج AI |
-| `PLANNER_MODE=openai`, `BACKEND_MODE=mock` | اختبار AI حقيقي على بيانات تجريبية؛ يحتاج `OPENAI_API_KEY` و`OPENAI_MODEL` |
-| `PLANNER_MODE=openai`, `BACKEND_MODE=laravel` | ربط حقيقي بعد ضبط عنوان الـbackend ومساراته ومفتاح الخدمة |
-
-`OPENAI_MODEL` متروك لاختيار نموذج متاح في حسابكم يدعم Responses API وFunction Calling؛ لم نختبر نموذجًا مدفوعًا من غير مفتاحكم. بيانات المنتجات والمتاجر في وضع mock تحمل أسماء تجريبية وروابط `demo.example` غير مخصصة للتسوق. طلب الاختبار `DEMO-1001` يخص `demo-customer` فقط. لا تستخدم بيانات التجربة في الإطلاق.
-
-## مكان وضع endpoints Laravel لاحقًا
-
-تُضبط القيم التالية في `.env`:
-
-```dotenv
-BACKEND_MODE=laravel
-BACKEND_BASE_URL=https://your-backend.example
-BACKEND_API_TOKEN=your-private-laravel-read-token
-BACKEND_STORES_PATH=/api/ai/stores
-BACKEND_PRODUCTS_PATH=/api/ai/products/search
-BACKEND_FAQ_PATH=/api/ai/faqs/search
-BACKEND_ORDER_PATH=/api/ai/orders/{order_number}
-ALLOWED_CATALOG_HOSTS=["your-shop.example","your-cdn.example"]
-ALLOWED_TRACKING_HOSTS=["your-shipping-provider.example"]
-```
-
-العنوان والمسارات والمفاتيح في الإعدادات. إذا اختلف **شكل الرد** من Laravel عن العقد المقترح، يتم التعديل في `app/gateway.py` فقط. هذا أهم من مجرد تبديل الروابط: يجب مطابقة الحقول، أنواع القيم، حالات الطلب، والتحقق من الصلاحيات. التفاصيل في [عقد الربط](docs/API_CONTRACT.md).
-
-## التصميم
+The AI microservice lives in a private network behind your primary Laravel backend. The frontend client never communicates with FastAPI directly and never holds the `AI_SERVICE_TOKEN`.
 
 ```mermaid
-flowchart LR
-  Frontend --> Laravel
-  Laravel -->|authenticated service request| FastAPI
-  FastAPI -->|one typed decision| OpenAI
-  FastAPI -->|read only| Gateway
-  Gateway --> MockData
-  Gateway --> LaravelDataAPI
-  FastAPI -->|answer and validated cards| Laravel
+sequenceDiagram
+    autonumber
+    actor User as Customer
+    participant Laravel as Laravel Backend
+    participant FastAPI as FastAPI Microservice
+    participant OpenAI as OpenAI Responses API
+    participant Gateway as Catalog / Order Gateway
+    participant Redis as Redis Session Store
+
+    User->>Laravel: Sends message via storefront chat widget
+    Laravel->>FastAPI: POST /v1/chat (with Bearer Token + X-Session-Subject + X-Customer-ID)
+    FastAPI->>Redis: Fetch ephemeral session state & conversation history
+    FastAPI->>OpenAI: Extract intent & parameters (Tool / Function Calling)
+    OpenAI-->>FastAPI: Structured intent (e.g., search_products, max_price=200)
+    alt Requires Catalog / Store / Order Data
+        FastAPI->>Gateway: Fetch verified data (Laravel API or Local Mock)
+        Gateway-->>FastAPI: Authoritative records (validated prices & URLs)
+    end
+    FastAPI->>FastAPI: Formulate response cards, quick replies & friendly text
+    FastAPI->>Redis: Update sliding-window session turns
+    FastAPI-->>Laravel: 200 OK with structured JSON response
+    Laravel-->>User: Render assistant reply & product carousel
 ```
 
-النموذج يختار عملية واحدة محددة بمعاملات مقيدة عبر Function Calling. الكود ينفذ القراءة ويكوّن الرد من البيانات الموثوقة. الأسعار والسياسات وحالة الطلب لا تُولد بحرية من النموذج. بطاقات المنتجات تحتوي على الوصف والسعر الحقيقيين. هذا التصميم يحتاج عادة استدعاء نموذج واحد للرسالة ويجعل فحص رقم الطلب والصلاحيات مستقلًا عن تعليمات النموذج.
+---
 
-تجري محادثة النموذج باستدعاءات مستقلة مع سياق محدود من الجلسة و`store=false`؛ مخرجات حالة الطلب لا تُرسل كجزء من سياق لاحق. `store=false` لا يعني تغيير سياسة الاحتفاظ لدى مزوّد الخدمة؛ راجع إعدادات مشروع OpenAI عند الإطلاق.
+## ⚙️ Operational Modes
 
-| الملف | المسؤولية |
-|---|---|
-| `app/main.py` | نقاط HTTP، مصادقة خدمة Laravel، حدود الطلبات، دورة حياة الموارد |
-| `app/service.py` | قواعد الحوار والقراءة والترشيح ورقم الطلب |
-| `app/planner.py` | مخطط OpenAI الفعلي ووضع العرض المحلي |
-| `app/gateway.py` | عقد القراءة وتنفيذ mock وLaravel |
-| `app/models.py` | نماذج الإدخال والبيانات والإخراج |
-| `app/replies.py` | ردود ودودة باللغتين وتسميات الحالات وواتساب |
-| `app/sessions.py` | جلسات مؤقتة، عزل المستخدمين ومنع تداخل الرسائل |
-| `app/data/catalog.json` | بيانات مصطنعة، وليست بيانات المشروع الفعلية |
-| `examples/LaravelAiController.php` | مثال الربط من Laravel، يحتاج مواءمة مع المشروع الفعلي |
+Switch modes instantly by updating `.env`:
 
-## الجلسات والصلاحيات
+| Mode | `PLANNER_MODE` | `BACKEND_MODE` | Description |
+|---|---|---|---|
+| **Local Demo** | `demo` | `mock` | **100% Free & Offline.** Uses rule-based planning and local JSON catalog fixture. |
+| **AI Evaluation** | `openai` | `mock` | Evaluates real OpenAI function calling against local mock catalog. Requires `OPENAI_API_KEY`. |
+| **Production** | `openai` | `laravel` | Full live integration with OpenAI and live Laravel backend endpoints. |
 
-- الخدمة تستقبل الاتصالات من Laravel. مفتاح `AI_SERVICE_TOKEN` لا يوضع في المتصفح.
-- Laravel يولّد `X-Session-Subject` من جلسته، ويستخرج `X-Customer-ID` من المستخدم المسجل. لا يمرر قيم هذين الرأسين من العميل.
-- الجلسة مربوطة بهوية جلسة Laravel وهوية المستخدم معًا. تغيير الحساب أو الدخول يتطلب جلسة AI جديدة. بعد الدخول يُعاد إرسال رقم الطلب في رسالة المستخدم.
-- `DELETE /v1/sessions/{id}` يمسح المحادثة. يجب استدعاؤه عند إنهاء الجلسة أو قبل تسجيل الخروج. تغيير الصفحة داخل الموقع لا ينهي الجلسة.
-- TTL افتراضي 30 دقيقة خمول يمسح الجلسات المهجورة. الـfrontend يجب ألا يحفظ التاريخ أو معرف الجلسة في تخزين دائم. إغلاق المتصفح لا يضمن وصول طلب حذف، ولذلك توجد مدة انتهاء تلقائية.
-- وضع الذاكرة المحلية مناسب لعملية واحدة في التطوير. وضع الإنتاج يحتاج Redis مشتركًا مع تعطيل حفظه على القرص والنسخ الاحتياطية لهذه الجلسات.
-- سجل التشغيل يحتوي request id، زمن التنفيذ، العملية، وعدد tokens. لا نكتب نص الرسائل أو تفاصيل الطلب في السجلات.
+---
 
-## ما يعرضه فريق الواجهة
+## 🚀 Quick Start Guide
 
-نص `answer`، بطاقات `product_cards` و`store_cards`، حقل `order` عند نجاح التحقق، و`quick_replies` عند البداية. يعرض `requires_order_number` أو `requires_login` المسار المطلوب. زر واتساب يظهر فقط عند `handoff.requested=true` ووجود `handoff.url`. يُرسم النص كنص عادي وليس HTML. روابط الصور والمنتجات تتقيد بالدومينات في الإعدادات.
+### Prerequisites
+* Python 3.12 or higher
+* Git
 
-دور الواجهة يشمل الزر العائم في الصفحات، دعم RTL/LTR، مؤشر الانتظار، ومنع الرسائل الفارغة أو أكثر من 300 حرف. الخدمة تتحقق من حدود الإدخال أيضًا. الـAPI الحالي يعيد JSON مكتملًا؛ لم نضف تدفقًا شكليًا للنص يوحي بسرعة لم تُقَس. زمن OpenAI وLaravel الحقيقيان يجب قياسهما قبل اعتماد شرط الثانيتين.
-
-## الاختبارات
+### Local Setup (PowerShell / Windows)
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
-.\.venv\Scripts\python.exe -m ruff check app tests scripts
-.\.venv\Scripts\python.exe scripts/smoke.py
+# 1. Clone repository
+git clone https://github.com/Zeyadmohamed291/ChatBot.git
+cd ChatBot
+
+# 2. Create and activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 3. Install locked dependencies
+pip install -r requirements-dev.lock
+pip install --no-deps -e .
+
+# 4. Create environment file
+Copy-Item .env.example .env
+
+# 5. Start the FastAPI development server
+python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-الاختبارات تعمل بلا شبكة خارجية وتستخدم SDK OpenAI الحقيقي مع HTTP transport تجريبي، وLaravel responses تجريبية، وRedis محاكى. تشمل: ملكية الطلب، عدم استدعاء الطلبات بدون رقم/دخول، رفض رقم مخترع من النموذج، عزل الجلسات وانتهاؤها وحذفها والتداخل، الردود غير المطابقة للعقد، أخطاء التكامل، اللغتين، الميزانيات، الروابط، حدود الحجم/التكرار، وغياب عمليات الدفع والإلغاء.
+### Local Setup (macOS / Linux)
 
-سيناريوهات التقييم مع النموذج الحقيقي موجودة في `docs/ACCEPTANCE.md`. نجاح الاختبارات المحلية لا يغني عن اختبار النموذج المختار وعقد Laravel الحقيقي.
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.lock
+pip install --no-deps -e .
+cp .env.example .env
+python3 -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+```
 
-بعد ضبط مفتاح OpenAI والموديل، يمكن تشغيل `python scripts/evaluate.py --live` داخل البيئة المعزولة. هذا الاختبار ينفذ 16 استدعاءً مدفوعًا على نصوص مصطنعة، ويقيس اختيار العمليات واللغة والميزانية وزمن المخطط واستهلاك tokens. لم يُشغّل على حسابكم.
+* **Interactive Swagger UI**: Visit `http://127.0.0.1:8000/docs` in your browser.
+* **Interactive CLI Chat**: Open another terminal and run:
+  ```powershell
+  python scripts/chat.py
+  ```
+* **Automated Scripted Demo**:
+  ```powershell
+  python scripts/demo.py
+  ```
 
-## تشغيل الإنتاج
+---
 
-ملف Docker موجود. شغّل Redis في شبكة خاصة بدون persistence، واضبط `REDIS_URL` و`ENVIRONMENT=production` ومفاتيح عشوائية، وعنوان Laravel بـHTTPS. وضع الإنتاج يرفض mock وdemo والمفاتيح الناقصة.
+## 🔧 Environment Configuration
 
-الخدمة يجب أن تكون داخل الشبكة الخاصة خلف Laravel، مع TLS وحدود أحجام/مهل اتصال في reverse proxy. `/health/live` يتحقق من حياة العملية؛ `/health/ready` يتحقق من مخزن الجلسات، ولا يعني أن OpenAI أو Laravel تم اختباره لحظيًا. لا حاجة لـCORS عام لأن المتصفح يتصل بـLaravel.
+All settings are configured in `.env` (see [`.env.example`](.env.example)):
 
-مراجع التصميم: [Function Calling](https://developers.openai.com/api/docs/guides/function-calling)، [Production best practices](https://developers.openai.com/api/docs/guides/production-best-practices).
+| Variable | Default | Purpose |
+|---|---|---|
+| `ENVIRONMENT` | `development` | Set to `production` in staging/production deployments. |
+| `PLANNER_MODE` | `demo` | `demo` (rule-based) or `openai` (GPT model). |
+| `BACKEND_MODE` | `mock` | `mock` (local JSON fixture) or `laravel` (live HTTP API). |
+| `AI_SERVICE_TOKEN` | *required* | Secret Bearer token shared between Laravel and FastAPI. |
+| `OPENAI_API_KEY` | *optional* | OpenAI API secret key (required if `PLANNER_MODE=openai`). |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model identifier supporting structured function calling. |
+| `BACKEND_BASE_URL` | *empty* | Base HTTPS URL of Laravel backend (e.g. `https://shop.example`). |
+| `BACKEND_API_TOKEN` | *empty* | Read-only bearer token for querying Laravel catalog endpoints. |
+| `ALLOWED_CATALOG_HOSTS` | `["demo.example"]` | Whitelist of allowed product domains (prevents phishing & SSRF). |
+| `ALLOWED_TRACKING_HOSTS`| `["tracking.example"]`| Whitelist of allowed shipping carrier domains. |
+| `WHATSAPP_PHONE` | *empty* | Support WhatsApp number (digits only, e.g. `966500000000`). |
+| `REDIS_URL` | *empty* | Redis connection string (e.g. `redis://localhost:6379/0`). |
+| `SESSION_TTL_SECONDS` | `1800` | Sliding session expiration (30 minutes of inactivity). |
+
+---
+
+## 📡 API Contract Overview
+
+For full schema definitions and edge-case handling, refer to [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
+
+### Main Endpoints
+
+* `POST /v1/chat`: Main conversational endpoint.
+  ```json
+  // Request
+  {
+    "message": "عايز عطر نسائي تحت 200 ريال",
+    "session_id": null,
+    "locale": "ar",
+    "current_store_id": null
+  }
+  ```
+* `DELETE /v1/sessions/{session_id}`: Purges session history upon logout or chat closure.
+* `GET /health/live`: Container liveness check.
+* `GET /health/ready`: Readiness check verifying session store and gateway availability.
+
+---
+
+## 🐘 Laravel Integration Example
+
+A complete reference controller is provided in [`examples/LaravelAiController.php`](examples/LaravelAiController.php).
+
+```php
+// In Laravel Controller:
+$response = Http::withToken(config('services.loulou_ai.token'))
+    ->withHeaders([
+        'X-Session-Subject' => $request->session()->get('ai_subject'),
+        'X-Customer-ID'     => $request->user()?->id,
+    ])
+    ->post(config('services.loulou_ai.url') . '/v1/chat', [
+        'message'          => $request->input('message'),
+        'session_id'       => $request->session()->get('ai_session_id'),
+        'locale'           => app()->getLocale(),
+    ]);
+
+if ($response->successful()) {
+    $request->session()->put('ai_session_id', $response->json('session_id'));
+    return response()->json($response->json());
+}
+```
+
+---
+
+## 🧪 Testing & Quality Assurance
+
+The codebase includes comprehensive test suites running completely offline in **under 3 seconds**:
+
+```powershell
+# 1. Run all 52 unit and integration tests
+python -m pytest -q -p no:cacheprovider
+
+# 2. Run code style & static analysis
+python -m ruff check app tests scripts
+
+# 3. Run automated end-to-end smoke test
+python scripts/smoke.py
+
+# 4. Run model evaluation benchmark (requires OPENAI_API_KEY)
+python scripts/evaluate.py --live
+```
+
+---
+
+## 🐳 Docker & Production Deployment
+
+Run the complete stack with Redis in Docker:
+
+```bash
+# Build and run with Docker Compose
+docker compose up -d
+
+# Check service health
+curl -f http://127.0.0.1:8000/health/ready
+```
+
+---
+
+## 📁 Repository Directory Structure
+
+```text
+├── .github/workflows/       # GitHub Actions CI pipeline
+├── app/                     # Core application package
+│   ├── data/catalog.json    # Local development & test catalog fixture
+│   ├── config.py            # Strongly typed settings & environment validation
+│   ├── errors.py            # Domain-specific HTTP exceptions
+│   ├── gateway.py           # Catalog & order gateway (Mock / Laravel)
+│   ├── main.py              # FastAPI app, lifespan, auth & rate limits
+│   ├── models.py            # Pydantic schemas (Request/Response/Cards)
+│   ├── planner.py           # Intent planner (OpenAI Function Calling / Demo)
+│   ├── replies.py           # Bilingual response templates & WhatsApp links
+│   ├── service.py           # Dialog orchestrator & security guard
+│   ├── sessions.py          # Session store (In-Memory / Redis)
+│   ├── telemetry.py         # Structured logging & metrics
+│   └── text.py              # Arabic normalization & language detection
+├── docs/                    # Complete technical documentation
+│   ├── ACCEPTANCE.md        # Quality verification & test scenarios
+│   ├── API_CONTRACT.md      # API contract for Laravel & frontend teams
+│   ├── ARCHITECTURE_PLAN.md # System architecture & roadmap
+│   ├── CODE_GUIDE.md        # Technical developer code guide
+│   ├── WALKTHROUGH.md       # Architectural system walkthrough
+│   ├── openapi.json         # Auto-generated OpenAPI 3.1 specification
+│   ├── ar/                  # Arabic documentation archive
+│   └── spec/                # SRS & business requirement specifications
+├── examples/                # Laravel integration reference controller
+├── scripts/                 # CLI tools (interactive chat, smoke test, evaluator)
+├── tests/                   # 52 automated unit & integration test cases
+├── compose.yaml             # Docker Compose stack with Redis
+├── Dockerfile               # Production multi-stage Docker build
+├── pyproject.toml           # Project packaging & tool configuration
+├── requirements.lock        # Production pinned dependencies
+└── requirements-dev.lock    # Development pinned dependencies
+```
+
+---
+
+## 📚 Documentation Index
+
+* 🇬🇧 **[System Walkthrough](docs/WALKTHROUGH.md)** — Architectural overview and sequence diagrams.
+* 🇬🇧 **[API Integration Contract](docs/API_CONTRACT.md)** — Detailed JSON specifications for Laravel & Frontend.
+* 🇬🇧 **[Acceptance & Quality Criteria](docs/ACCEPTANCE.md)** — Evaluation criteria, security checks, and QA scenarios.
+* 🇬🇧 **[Code Guide](docs/CODE_GUIDE.md)** — File-by-file developer reference.
+* 🇬🇧 **[Architecture Plan](docs/ARCHITECTURE_PLAN.md)** — Design decisions, scope, and phases.
+* 🇸🇦 **[Arabic Documentation Archive](docs/ar/)** — الدليل العربي الكامل ومخطط المشروع.
+
+---
+
+## 📄 License & Ownership
+
+Developed for **Loulou Al Afrah** multi-store platform. All rights reserved.

@@ -18,9 +18,9 @@ async def main():
     url = "http://127.0.0.1:8000"
 
     print("==================================================")
-    print("✨ مرحباً بك في تجربة مساعد Loulou AI التفاعلي ✨")
-    print(f"الوضع الحالي: PLANNER={settings.planner_mode} | BACKEND={settings.backend_mode}")
-    print("اكتب رسالتك واضغط Enter. للخروج اكتب: exit أو quit")
+    print("✨ Loulou AI — Interactive CLI Chat | محادثة تجريبية ✨")
+    print(f"Active Mode: PLANNER={settings.planner_mode} | BACKEND={settings.backend_mode}")
+    print("Type your message and press Enter. To exit type: exit, quit, or خروج")
     print("==================================================\n")
 
     async with httpx.AsyncClient(base_url=url, headers=headers, timeout=30, trust_env=False) as client:
@@ -28,17 +28,17 @@ async def main():
         try:
             health = await client.get("/health/ready")
             if health.status_code != 200:
-                print(f"⚠️ تنبيه: حالة السيرفر: {health.status_code}")
+                print(f"⚠️ Warning: Server status code: {health.status_code}")
         except Exception:
-            print("❌ تنبيه: السيرفر غير شغال حالياً!")
-            print("يرجى تشغيل السيرفر أولاً في نافذة تيرمينال أخرى بالأمر:")
-            print("  .\\.venv\\Scripts\\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000\n")
+            print("❌ Server is not currently running!")
+            print("Please start the server first in another terminal with:")
+            print("  python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000\n")
             return
 
         session_id = None
         while True:
             try:
-                user_msg = input("أنت: ").strip()
+                user_msg = input("You (أنت): ").strip()
             except (EOFError, KeyboardInterrupt):
                 break
 
@@ -51,48 +51,48 @@ async def main():
             try:
                 res = await client.post("/v1/chat", json=payload)
                 if res.status_code != 200:
-                    print(f"❌ خطأ ({res.status_code}): {res.text}")
+                    print(f"❌ Error ({res.status_code}): {res.text}")
                     continue
                 data = res.json()
                 session_id = data.get("session_id")
 
-                print(f"\n🤖 المساعد: {data.get('answer')}")
+                print(f"\n🤖 Assistant (المساعد): {data.get('answer')}")
 
                 # Show product cards if any
                 cards = data.get("product_cards", [])
                 if cards:
-                    print("\n🛍️ المنتجات المقترحة:")
+                    print("\n🛍️ Recommended Products (المنتجات المقترحة):")
                     for idx, c in enumerate(cards, 1):
                         price = f"{c.get('price')} {c.get('currency', 'SAR')}"
-                        print(f"   {idx}. {c.get('name')} | السعر: {price}")
+                        print(f"   {idx}. {c.get('name')} | Price (السعر): {price}")
 
                 # Show store cards if any
                 stores = data.get("store_cards", [])
                 if stores:
-                    print("\n🏬 المتاجر:")
+                    print("\n🏬 Stores (المتاجر):")
                     for idx, s in enumerate(stores, 1):
                         print(f"   {idx}. {s.get('name')} - {s.get('description', '')}")
 
                 # Show order status if any
                 order = data.get("order")
                 if order:
-                    print(f"\n📦 حالة الطلب ({order.get('order_number')}): {order.get('status')}")
+                    print(f"\n📦 Order Status (حالة الطلب) [{order.get('order_number')}]: {order.get('status')}")
 
                 # Show quick replies
                 replies = data.get("quick_replies", [])
                 if replies:
-                    print(f"\n💡 اقتراحات سريعة: {' | '.join(replies)}")
+                    print(f"\n💡 Quick Replies (اقتراحات): {' | '.join(replies)}")
 
                 print("-" * 50)
             except Exception as e:
-                print(f"❌ حدث خطأ في الاتصال: {e}")
+                print(f"❌ Connection error: {e}")
 
         if session_id:
             try:
                 await client.delete(f"/v1/sessions/{session_id}")
             except Exception:
                 pass
-        print("\nتم إنهاء المحادثة بنجاح.")
+        print("\nSession ended successfully. مع السلامة!")
 
 
 if __name__ == "__main__":

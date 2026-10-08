@@ -1,151 +1,142 @@
-# 🚀 الدليل الشامل لمشروع Loulou AI (Project Walkthrough)
+# 🚀 Loulou AI Microservice — Architecture & System Walkthrough
 
-مرحباً بك! هذا الدليل مُصمم ليكون مرجعاً سهلاً ومرتباً لقراءة وفهم مشروع **Loulou AI** بالكامل، حيث يشرح المعمارية العامة، ومسار البيانات، ووظيفة كل ملف في المشروع.
-
----
-
-## 📌 1. نظرة عامة والهدف من المشروع
-
-مشروع **Loulou AI** هو **Microservice مستقلة** مبنية باستخدام **Python و FastAPI**.
-هدفها الأساسي هو العمل كـ **مساعد تسوق ذكي ثنائي اللغة (عربي / إنجليزي)** لمتجر إلكتروني.
-
-> **ملاحظة:**
-> المتجر الرئيسي (واجهة المستخدم ولوحة التحكم) مصمم ليكون مبنياً بـ **Laravel (PHP)**. المتجر يستقبل العميل، ثم يرسل رسالته إلى خدمة Python هذه عبر API داخلي للحصول على الترشيحات والإجابات الذكية وتتبع الطلبات.
+Welcome! This walkthrough provides an end-to-end guide to the **Loulou AI** shopping assistant microservice, explaining its architectural design, request lifecycles, and directory structure.
 
 ---
 
-## 🗺️ 2. مخطط تدفق الرسالة (Request Lifecycle)
+## 📌 1. Overview & System Purpose
 
-يوضح المخطط التالي كيف تسير الرسالة من لحظة كتابة العميل وحتى استلام الرد:
+**Loulou AI** is a standalone, production-ready microservice built with **Python 3.12** and **FastAPI**.
+It functions as a **session-scoped bilingual (Arabic & English) conversational commerce assistant** designed to run behind a Laravel multi-store e-commerce application.
+
+### Key Architectural Tenets:
+1. **Decoupled Architecture**: The frontend communicates solely with Laravel. Laravel proxies chat requests to this FastAPI service with authenticated service tokens and verified user session headers.
+2. **Deterministic Data & Zero Hallucination**: AI is used strictly for intent classification and slot extraction (via OpenAI Function Calling). Actual product prices, availability, stock, and order statuses are fetched directly from authoritative backend data sources.
+3. **Strict Order Security**: The AI never accesses user order lists. Order lookups require the customer to explicitly provide an order number in their message while authenticated; the backend verifies customer ownership before returning status.
+4. **Resilient Dual-Mode Operation**: The system operates with zero external dependencies in local mock/demo mode for development and testing, or in full production mode integrated with OpenAI and Laravel.
+
+---
+
+## 🗺️ 2. Request Lifecycle & Sequence Flow
+
+The following diagram illustrates the complete journey of a customer message:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as العميل
-    participant Laravel as متجر Laravel
-    participant Main as app/main.py
-    participant Session as app/sessions.py
-    participant Service as app/service.py
-    participant Planner as app/planner.py (OpenAI/Demo)
-    participant Gateway as app/gateway.py (Backend/Catalog)
+    actor User as Customer
+    participant Laravel as Laravel Backend
+    participant Main as app/main.py (HTTP / Auth)
+    participant Session as app/sessions.py (Store)
+    participant Service as app/service.py (Orchestrator)
+    participant Planner as app/planner.py (OpenAI / Demo)
+    participant Gateway as app/gateway.py (Catalog / Backend)
 
-    User->>Laravel: يكتب رسالة في الشات
-    Laravel->>Main: POST /v1/chat (مع الـ Token وبيانات الجلسة)
-    Main->>Main: التحقق من الصلاحيات والـ Headers وحدود الطلب
-    Main->>Session: جلب أو إنشاء جلسة خاصة بهذا العميل
-    Main->>Service: تمرير الرسالة وسياق الجلسة
-    Service->>Planner: تحليل نية العميل واستخراج البيانات (Intent & Slots)
-    alt يحتاج بيانات (بحث عن منتج / حالة طلب)
-        Service->>Gateway: استعلام المنتجات أو حالة الطلب
-        Gateway-->>Service: إرجاع البيانات المنظمة
+    User->>Laravel: Sends message in chat widget
+    Laravel->>Main: POST /v1/chat (with Bearer Token, X-Session-Subject, X-Customer-ID)
+    Main->>Main: Validate token, rate limits, and payload schema
+    Main->>Session: Retrieve or initialize customer session
+    Main->>Service: Forward message & session context
+    Service->>Planner: Extract intent, language & slots (tool call)
+    alt Requires Data (Product Search / Store / FAQ / Order)
+        Service->>Gateway: Query authoritative backend data
+        Gateway-->>Service: Return structured data cards / order status
     end
-    Service->>Service: تركيب الرد النهائي (كروت منتجات + نصوص replies.py)
-    Service->>Session: تحديث تاريخ المحادثة
-    Service-->>Main: إرجاع كائن الرد المنظم
-    Main-->>Laravel: رد JSON جاهز للعرض
-    Laravel-->>User: عرض الرد وكروت المنتجات للعميل
+    Service->>Service: Synthesize final answer, UI cards & quick replies
+    Service->>Session: Persist conversation turn in session history
+    Service-->>Main: Return validated ChatResponse model
+    Main-->>Laravel: 200 OK with structured JSON payload
+    Laravel-->>User: Render reply, product cards & action buttons
 ```
 
 ---
 
-## 📂 3. جولة تفصيلية داخل مجلدات وملفات المشروع
+## 📂 3. Directory & File Tour
 
-### أ) الكود البرمجي الأساسي: `app/`
+### A. Core Application Package (`app/`)
 
-| الملف | الوظيفة والدور البرمجي |
+| File | Description & Responsibility |
 |---|---|
-| `app/main.py` | **نقطة الدخول (Entry Point):** يبدأ سيرفر FastAPI، ويوفر مسارات `/v1/chat` و `/health/ready`، ويدير التحقق من الأمان (Security Headers & Tokens)، ومعدل الاستخدام (Rate Limiting). |
-| `app/service.py` | **المنسق العام (Orchestrator):** العصب المركزي للمشروع؛ يربط الجلسة مع الـ Planner والـ Gateway ويصوغ الرد النهائي ويضمن سلامة البيانات. |
-| `app/planner.py` | **مخطط النوايا (Intent Planner):** عقل الذكاء الاصطناعي؛ يفهم كلام العميل ويصنفه (تحية، استفسار، بحث، تتبع طلب)، ويستخرج المتغيرات (السعر، الصنف، رقم الطلب). يدعم OpenAI أو القواعد التجريبية (Demo). |
-| `app/gateway.py` | **بوابة البيانات (Data Gateway):** المسؤولة عن جلب البيانات. تحتوي على `LaravelGateway` (للاتصال بـ Laravel حقيقي) و `MockGateway` (للقراءة من ملف تجريبي). |
-| `app/sessions.py` | **مدير الجلسات (Session Manager):** يحفظ سياق الحديث للمستخدم ليتذكر الردود السابقة. يدعم التخزين المؤقت في الذاكرة أو في **Redis** مع توقيت انتهاء (TTL). |
-| `app/models.py` | **نماذج البيانات (Pydantic Models):** تعريف هيكل الطلبات والردود وبطاقات المنتجات بدقة، وضمان صحة أنواع البيانات (Type Safety). |
-| `app/config.py` | **الإعدادات والبيئة:** قراءة المتغيرات من ملف `.env` (مفاتيح API، منافذ السيرفر، إعدادات Redis) والتحقق منها. |
-| `app/replies.py` | **قوالب الردود:** نصوص وقوالب الإجابات الجاهزة باللغتين العربية والإنجليزية لضمان ردود احترافية ومترابطة. |
-| `app/text.py` | **معالجة النصوص:** تنظيف النصوص، إزالة التشكيل العربي، كشف لغة الإدخال، وتنظيف الأحرف والمسافات. |
-| `app/errors.py` | **الاستثناءات (Custom Exceptions):** تعريف أخطاء التطبيق الخاصة لتسهيل معالجتها وإرجاع أكواد HTTP مناسبة. |
-| `app/telemetry.py` | **المراقبة والتتبع:** تسجيل السجلات (Logs)، مقاييس وقت الاستجابة، وتتبع الأحداث داخل التطبيق. |
-| `app/data/catalog.json` | **بيانات تجريبية:** كتالوج تجريبي يحتوي على منتجات ومتاجر وأسئلة شائعة لاختبار النظام محلياً دون الحاجة لقاعدة بيانات خارجية. |
+| `app/main.py` | **HTTP Entrypoint & Lifecycle**: Sets up FastAPI, configures rate limiting, authenticates service tokens, manages lifespan events, and exposes `/v1/chat`, `/v1/sessions/{id}`, `/health/live`, and `/health/ready`. |
+| `app/service.py` | **Core Orchestrator**: Coordinates session state, intent planning, backend data fetching, order security checks, response synthesis, and conversation history updates. |
+| `app/planner.py` | **Intent Planner**: Translates user messages into structured actions using OpenAI Function Calling (or deterministic rule-based matching in demo mode). Formulates search parameters, price filters, and extracts order numbers. |
+| `app/gateway.py` | **Data Gateway**: Abstraction layer for reading store catalog and order data. Implements `MockGateway` (local JSON fixture) and `LaravelGateway` (authenticated HTTP requests to Laravel). |
+| `app/sessions.py` | **Session Manager**: Manages ephemeral conversation sessions with sliding TTL expiration. Implements thread-safe `InMemorySessionStore` and distributed `RedisSessionStore`. |
+| `app/models.py` | **Pydantic Data Models**: Defines strict schemas for chat requests/responses, product cards, store cards, order statuses, handoff objects, and planner intents. |
+| `app/config.py` | **Configuration**: Reads and validates environment variables using `pydantic-settings`. |
+| `app/replies.py` | **Localized Templates**: Standard Arabic and English message templates, status badges, and WhatsApp handoff deep-links. |
+| `app/text.py` | **Text & Language Utilities**: Normalizes Arabic diacritics/alphabets, detects language, sanitizes inputs, and formats numbers. |
+| `app/errors.py` | **Custom Exceptions**: Domain-specific error classes mapped to clear HTTP status codes. |
+| `app/telemetry.py` | **Logging & Observability**: Structured request logging, timing instrumentation, and token usage metrics without logging sensitive customer messages. |
+| `app/data/catalog.json` | **Development Fixture**: Mock multi-store catalog, products, and FAQs used for zero-dependency local development and automated testing. |
 
 ---
 
-### ب) مجلد الوثائق: `docs/`
+### B. Documentation (`docs/`)
 
-* **`docs/WALKTHROUGH.md`**: هذا الملف (الدليل العملي الشامل والمبسط).
-* **`docs/CODE_GUIDE_AR.md`**: المرجع التقني العربي الأكثر تفصيلاً، يشرح كل دالة ومكان التعديل بالتفصيل.
-* **`docs/API_CONTRACT.md`**: مواصفات وشكل الـ JSON المتفق عليه بين فريق Laravel وخدمة الذكاء الاصطناعي.
-* **`docs/ACCEPTANCE.md`**: معايير القبول وسيناريوهات الاختبار للتأكد من جودة النظام قبل إطلاقه.
-* **`docs/openapi.json`**: التوثيق البرمجي لمسارات الـ API بصيغة OpenAPI القياسية.
-
----
-
-### ج) مجلد الاختبارات: `tests/`
-
-يحتوي على **52 اختبار آلي** تغطي كافة جوانب الخدمة وتعمل محلياً بالكامل دون الحاجة لأي خوادم خارجية:
-
-* **`tests/conftest.py`**: تجهيز بيئة الاختبار والمحاكيات (Mock Settings, Fake Redis).
-* **`tests/test_chat.py`**: فحص سيناريوهات المحادثة والترشيحات ودعم العربية والإنجليزية.
-* **`tests/test_sessions.py`**: فحص عزل الجلسات وحمايتها وتجديدها وحذفها.
-* **`tests/test_integrations.py`**: فحص بوابات البيانات ومطابقة عقد Laravel.
-* **`tests/test_failures.py`**: فحص صمود النظام عند حدوث أخطاء شبكة أو إدخال بيانات غير صحيحة.
+* **`docs/WALKTHROUGH.md`**: This architectural guide.
+* **`docs/API_CONTRACT.md`**: Complete API contract between Laravel, AI microservice, and frontend.
+* **`docs/ACCEPTANCE.md`**: Quality criteria, security verification scenarios, and acceptance checklist.
+* **`docs/CODE_GUIDE.md`**: Deep-dive technical code guide for developers.
+* **`docs/openapi.json`**: Auto-generated OpenAPI 3.1 specification for Postman / Swagger.
+* **`docs/spec/`**: Specification documents and reference PDFs.
+* **`docs/ar/`**: Complete Arabic documentation archive (`CODE_GUIDE.md`, `WALKTHROUGH.md`, `AI_PLAN.md`).
 
 ---
 
-### د) مجلد السكربتات المساعدة: `scripts/`
+### C. Test Suite (`tests/`)
 
-* **`scripts/demo.py`**: محادثة تفاعلية سريعة من شاشة الأوامر (Terminal) لتجربة الشات فورياً.
-* **`scripts/smoke.py`**: فحص فوري سريع (Smoke Test) للتأكد أن السيرفر يعمل ويستجيب بنجاح.
-* **`scripts/evaluate.py`**: تقييم سرعة ودقة الـ Planner ونموذج الـ AI عبر حالات محددة.
-* **`scripts/export_openapi.py`**: تحديث ملف `openapi.json` من كود FastAPI تلقائياً.
-* **`scripts/lock_dependencies.py`**: قفل وتثبيت إصدارات مكتبات بايثون.
+52 automated unit and integration tests executing in under 3 seconds without external network dependencies:
 
----
-
-### هـ) مجلد الأمثلة: `examples/`
-
-* **`examples/LaravelAiController.php`**: كود PHP جاهز يوضح لمطور Laravel كيف يربط تطبيقه بخدمة Python، وكيف يمرر الـ Headers والـ Tokens بطريقة آمنة.
+* **`tests/conftest.py`**: Test fixtures, mock environments, and fake Redis setup.
+* **`tests/test_chat.py`**: Chat flows, multi-store filtering, price constraints, bilingual switching, and quick replies.
+* **`tests/test_sessions.py`**: Session isolation, expiry, deletion, subject binding, and concurrent access.
+* **`tests/test_integrations.py`**: Gateway verification, contract adherence, and Redis persistence simulation.
+* **`tests/test_failures.py`**: Fault tolerance, backend outages, rate limiting, and malicious input handling.
 
 ---
 
-### و) ملفات الإعداد والتشغيل في المجلد الرئيسي
+### D. Utility Scripts (`scripts/`)
 
-* **`.env`**: ملف الإعدادات الحالية لجهازك (مفاتيح الخدمة، المنافذ، وضع التشغيل).
-* **`.env.example`**: نموذج استرشادي للمتغيرات البيئية المطلوبة عند النشر في أي سيرفر جديد.
-* **`pyproject.toml`**: ملف إعدادات حزمة بايثون وقائمة التبعيات وأدوات التطوير (pytest, ruff).
-* **`requirements.lock`**: القفل الدقيق لإصدارات مكتبات التشغيل.
-* **`requirements-dev.lock`**: القفل الدقيق لمكتبات التطوير والاختبارات.
-* **`Dockerfile` و `compose.yaml`**: لتشغيل الخدمة وسيرفر Redis داخل حاويات Docker بسهولة.
+* **`scripts/chat.py`**: Interactive terminal chat for live testing with rich formatting.
+* **`scripts/demo.py`**: Non-interactive scripted walkthrough exercising greetings, product search, and order tracking.
+* **`scripts/smoke.py`**: Automated smoke test that boots a temporary server on an ephemeral port and tests end-to-end functionality.
+* **`scripts/evaluate.py`**: Benchmark runner evaluating planner accuracy, latency, and token consumption.
+* **`scripts/export_openapi.py`**: Exports the current OpenAPI schema to `docs/openapi.json`.
+* **`scripts/lock_dependencies.py`**: Locks pinned dependency versions.
 
 ---
 
-## ⚙️ 4. أوضاع التشغيل الأساسية (Operational Modes)
+### E. Integration Examples (`examples/`)
 
-تتحكم المتغيرات في ملف `.env` في كيفية عمل النظام:
+* **`examples/LaravelAiController.php`**: Reference Laravel controller demonstrating session subject generation, token propagation, customer ID forwarding, and chat proxying.
 
-| الوضع | الإعدادات في `.env` | الاستخدام |
+---
+
+## ⚙️ 4. Operational Modes
+
+The service behavior is controlled via environment variables:
+
+| Mode | Configuration | Use Case |
 |---|---|---|
-| **تجريبي محلي 100% (مجاني)** | `PLANNER_MODE=demo`<br>`BACKEND_MODE=mock` | يعمل بدون مفتاح OpenAI وبدون سيرفر Laravel (باستخدام البيانات التجريبية). |
-| **ذكاء اصطناعي + بيانات تجريبية** | `PLANNER_MODE=openai`<br>`BACKEND_MODE=mock` | يستخدم ذكاء OpenAI الحقيقي لفهم العميل مع كتالوج تجريبي لاختبار جودة الردود. |
-| **ربط كامل مع الإنتاج** | `PLANNER_MODE=openai`<br>`BACKEND_MODE=laravel` | الوضع النهائي؛ ذكاء اصطناعي حقيقي + جلب بيانات المنتجات والطلبات من سيرفر Laravel الحقيقي. |
+| **Local Demo (Zero Cost)** | `PLANNER_MODE=demo`<br>`BACKEND_MODE=mock` | Instant local development and testing without OpenAI keys or Laravel backend. |
+| **AI Evaluation with Mock Catalog** | `PLANNER_MODE=openai`<br>`BACKEND_MODE=mock` | Evaluate real OpenAI intelligence and function calling against local mock catalog. |
+| **Full Production Integration** | `PLANNER_MODE=openai`<br>`BACKEND_MODE=laravel` | Live production mode connecting OpenAI with the real Laravel e-commerce API. |
 
 ---
 
-## 🛠️ 5. كيف تبدأ وتشغل المشروع عملياً؟
+## 🚀 5. Quick Commands Reference
 
-> **ملاحظة للمطور:**
-> جميع المكتبات مثبتة لديك بالفعل داخل المجلد `.venv` وجميع الاختبارات ناجحة!
+```powershell
+# 1. Start development server
+.\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
 
-1. **لتشغيل السيرفر المحلي:**
-   ```powershell
-   .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
-   ```
-2. **لفتح واجهة التوثيق التفاعلية (Swagger UI):**
-   افتح المتصفح على: `http://127.0.0.1:8000/docs`
-3. **لتجربة الشات في نافذة أوامر أخرى:**
-   ```powershell
-   .\.venv\Scripts\python.exe scripts/demo.py
-   ```
-4. **لتشغيل الاختبارات في أي وقت والتأكد من سلامة الكود:**
-   ```powershell
-   .\.venv\Scripts\pytest
-   ```
+# 2. Run interactive chat
+.\.venv\Scripts\python.exe scripts/chat.py
+
+# 3. Execute test suite
+.\.venv\Scripts\pytest -q
+
+# 4. Run linter
+.\.venv\Scripts\ruff check app tests scripts
+```
